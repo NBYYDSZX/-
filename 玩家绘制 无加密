@@ -1,0 +1,178 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local localPlayer = Players.LocalPlayer
+local trackedPlayers = {} -- 存储追踪信息的表
+local connections = {} -- 存储所有连接的表格
+
+-- 创建细长的光束
+local function createBeam(startPart, endPart)
+    local attachment0 = Instance.new("Attachment")
+    attachment0.Name = "PlayerTrackerAttachment0"
+    attachment0.Parent = startPart
+    
+    local attachment1 = Instance.new("Attachment")
+    attachment1.Name = "PlayerTrackerAttachment1"
+    attachment1.Parent = endPart
+    
+    local beam = Instance.new("Beam")
+    beam.Name = "PlayerTrackerBeam"
+    beam.Attachment0 = attachment0
+    beam.Attachment1 = attachment1
+    beam.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0)) -- 红色
+    beam.Width0 = 0.1 -- 起始端细
+    beam.Width1 = 0.1 -- 结束端细
+    beam.Transparency = NumberSequence.new(0.3) -- 稍微透明
+    beam.LightEmission = 0.5
+    beam.LightInfluence = 0
+    beam.Parent = startPart
+    
+    return {
+        beam = beam, 
+        attachment0 = attachment0, 
+        attachment1 = attachment1
+    }
+end
+
+-- 清理所有追踪线
+local function cleanupAll()
+    for player, trackData in pairs(trackedPlayers) do
+        if trackData.beam then
+            trackData.beam:Destroy()
+        end
+        if trackData.attachment0 then
+            trackData.attachment0:Destroy()
+        end
+        if trackData.attachment1 then
+            trackData.attachment1:Destroy()
+        end
+    end
+    trackedPlayers = {}
+    
+    -- 断开所有连接
+    for _, connection in ipairs(connections) do
+        connection:Disconnect()
+    end
+    connections = {}
+end
+
+-- 检查角色是否死亡
+local function isCharacterDead(character)
+    if not character then return true end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    return humanoid and (humanoid.Health <= 0 or humanoid:GetState() == Enum.HumanoidStateType.Dead)
+end
+
+-- 更新追踪线
+local function updateTracking()
+    -- 检查本地角色是否存在或已死亡
+    if not localPlayer.Character or isCharacterDead(localPlayer.Character) then
+        cleanupAll()
+        return
+    end
+    
+    local localRootPart = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRootPart then return end
+    
+    -- 获取所有玩家
+    local allPlayers = Players:GetPlayers()
+    
+    -- 移除不存在的玩家或已死亡玩家的追踪线
+    for player, trackData in pairs(trackedPlayers) do
+        if not table.find(allPlayers, player) or player == localPlayer or 
+           not player.Character or isCharacterDead(player.Character) then
+            if trackData.beam then
+                trackData.beam:Destroy()
+            end
+            if trackData.attachment0 then
+                trackData.attachment0:Destroy()
+            end
+            if trackData.attachment1 then
+                trackData.attachment1:Destroy()
+            end
+            trackedPlayers[player] = nil
+        end
+    end
+    
+    -- 为每个其他玩家创建或更新追踪线
+    for _, player in ipairs(allPlayers) do
+        if player ~= localPlayer and player.Character and not isCharacterDead(player.Character) then
+            local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+            
+            if humanoidRootPart then
+                if not trackedPlayers[player] then
+                    -- 创建新的追踪线
+                    trackedPlayers[player] = createBeam(localRootPart, humanoidRootPart)
+                else
+                    -- 更新现有追踪线的位置
+                    if trackedPlayers[player].attachment0 then
+                        trackedPlayers[player].attachment0.Parent = localRootPart
+                    end
+                    if trackedPlayers[player].attachment1 then
+                        trackedPlayers[player].attachment1.Parent = humanoidRootPart
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- 开始追踪
+local function startTracking()
+    -- 先清理所有现有资源
+    cleanupAll()
+    
+    -- 每帧更新
+    local heartbeatConnection = RunService.Heartbeat:Connect(function()
+        updateTracking()
+    end)
+    table.insert(connections, heartbeatConnection)
+    
+    -- 监听角色死亡事件
+    local characterRemovingConnection = localPlayer.CharacterRemoving:Connect(function()
+        cleanupAll()
+    end)
+    table.insert(connections, characterRemovingConnection)
+    
+    -- 监听玩家离开事件
+    local playerRemovingConnection = Players.PlayerRemoving:Connect(function(player)
+        if player == localPlayer then
+            cleanupAll()
+        end
+    end)
+    table.insert(connections, playerRemovingConnection)
+    
+    -- 监听新玩家加入事件
+    local playerAddedConnection = Players.PlayerAdded:Connect(function(player)
+        -- 不需要立即处理，会在updateTracking中处理
+    end)
+    table.insert(connections, playerAddedConnection)
+    
+    -- 监听角色生成事件
+    local characterAddedConnection = localPlayer.CharacterAdded:Connect(function(character)
+        character:WaitForChild("HumanoidRootPart")
+        -- 延迟一点确保角色完全加载
+        task.wait(0.5)
+        cleanupAll()
+        startTracking()
+    end)
+    table.insert(connections, characterAddedConnection)
+end
+
+-- 初始化脚本
+if localPlayer.Character then
+    localPlayer.Character:WaitForChild("HumanoidRootPart")
+    startTracking()
+else
+    local initialConnection = localPlayer.CharacterAdded:Connect(function(character)
+        character:WaitForChild("HumanoidRootPart")
+        startTracking()
+        initialConnection:Disconnect()
+    end)
+    table.insert(connections, initialConnection)
+end
+
+-- 返回清理函数以便外部调用
+return function()
+    cleanupAll()
+end

@@ -1,0 +1,363 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+
+local ESPObjects = {}
+local connections = {}
+
+-- 等待角色生成
+local function waitForCharacter()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return LocalPlayer.Character
+    end
+    
+    local character = LocalPlayer.CharacterAdded:Wait()
+    character:WaitForChild("HumanoidRootPart")
+    return character
+end
+
+-- 创建透视ESP绘制函数
+local function createESP(object, name, color)
+    if ESPObjects[object] or not object:IsA("BasePart") then return end
+    
+    -- 确保角色存在
+    local character = waitForCharacter()
+    if not character then return end
+
+    -- 创建透视高光效果
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESPHighlight"
+    highlight.Adornee = object
+    highlight.FillColor = color
+    highlight.FillTransparency = 0.8
+    highlight.OutlineColor = color
+    highlight.OutlineTransparency = 0.2
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = object
+
+    -- 创建透视BillboardGui
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESPBillboard"
+    billboard.Adornee = object
+    billboard.Size = UDim2.new(0, 100, 0, 35)
+    billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+    billboard.AlwaysOnTop = true
+    billboard.MaxDistance = 500
+    billboard.ClipsDescendants = false
+
+    -- 创建背景框
+    local background = Instance.new("Frame")
+    background.Name = "Background"
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+    background.BackgroundTransparency = 0.6
+    background.BorderSizePixel = 0
+    background.ZIndex = 10
+    background.Parent = billboard
+
+    -- 圆角效果
+    local uicorner = Instance.new("UICorner")
+    uicorner.CornerRadius = UDim.new(0, 4)
+    uicorner.Parent = background
+
+    -- 标题文本
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -6, 0.55, 0)
+    title.Position = UDim2.new(0, 3, 0, 1)
+    title.BackgroundTransparency = 1
+    title.Text = name
+    title.TextColor3 = color
+    title.TextStrokeColor3 = Color3.new(0, 0, 0)
+    title.TextStrokeTransparency = 0.2
+    title.TextSize = 10
+    title.Font = Enum.Font.SourceSansBold
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 11
+    title.Parent = billboard
+
+    -- 距离文本
+    local distance = Instance.new("TextLabel")
+    distance.Name = "Distance"
+    distance.Size = UDim2.new(1, -6, 0.45, 0)
+    distance.Position = UDim2.new(0, 3, 0.55, -1)
+    distance.BackgroundTransparency = 1
+    distance.Text = "0m"
+    distance.TextColor3 = Color3.new(1, 1, 1)
+    distance.TextStrokeColor3 = Color3.new(0, 0, 0)
+    distance.TextStrokeTransparency = 0.2
+    distance.TextSize = 9
+    distance.Font = Enum.Font.SourceSans
+    distance.TextXAlignment = Enum.TextXAlignment.Left
+    distance.ZIndex = 11
+    distance.Parent = billboard
+
+    billboard.Parent = object
+
+    -- 创建光束连线
+    local beam = Instance.new("Beam")
+    beam.Name = "ESPBeam"
+    
+    -- 起点Attachment（玩家脚部）
+    local attachment0 = Instance.new("Attachment")
+    attachment0.Name = "ESPAttachment0"
+    
+    -- 终点Attachment（物体）
+    local attachment1 = Instance.new("Attachment")
+    attachment1.Name = "ESPAttachment1"
+    attachment1.Parent = object
+
+    beam.Attachment0 = attachment0
+    beam.Attachment1 = attachment1
+    beam.Color = ColorSequence.new(color)
+    beam.Width0 = 0.06
+    beam.Width1 = 0.06
+    beam.Transparency = NumberSequence.new(0.6)
+    beam.LightEmission = 0.8
+    beam.LightInfluence = 0
+    beam.Parent = attachment0
+
+    -- 存储ESP信息
+    ESPObjects[object] = {
+        Highlight = highlight,
+        Billboard = billboard,
+        Beam = beam,
+        Attachment0 = attachment0,
+        Attachment1 = attachment1,
+        DistanceLabel = distance,
+        Object = object,
+        Name = name,
+        Color = color
+    }
+
+    -- 更新Attachment位置（在角色存在时）
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        attachment0.Parent = character.HumanoidRootPart
+        attachment0.Position = Vector3.new(0, -1.8, 0)
+    end
+
+    -- 监听角色变化
+    local charConnection
+    charConnection = LocalPlayer.CharacterAdded:Connect(function(newChar)
+        newChar:WaitForChild("HumanoidRootPart")
+        if ESPObjects[object] and ESPObjects[object].Attachment0 then
+            ESPObjects[object].Attachment0.Parent = newChar.HumanoidRootPart
+            ESPObjects[object].Attachment0.Position = Vector3.new(0, -1.8, 0)
+        end
+    end)
+    
+    table.insert(connections, charConnection)
+
+    -- 监听物体销毁
+    local destroyConnection
+    destroyConnection = object.AncestryChanged:Connect(function()
+        if not object or not object.Parent then
+            removeESP(object)
+        end
+    end)
+    
+    table.insert(connections, destroyConnection)
+end
+
+-- 移除ESP的函数
+local function removeESP(object)
+    if ESPObjects[object] then
+        local espData = ESPObjects[object]
+        
+        if espData.Highlight then 
+            espData.Highlight:Destroy() 
+        end
+        if espData.Billboard then 
+            espData.Billboard:Destroy() 
+        end
+        if espData.Beam then 
+            espData.Beam:Destroy() 
+        end
+        if espData.Attachment0 then 
+            espData.Attachment0:Destroy() 
+        end
+        if espData.Attachment1 then 
+            espData.Attachment1:Destroy() 
+        end
+        
+        ESPObjects[object] = nil
+    end
+end
+
+-- 移除所有ESP的函数
+local function removeAllESP()
+    for object, _ in pairs(ESPObjects) do
+        removeESP(object)
+    end
+    ESPObjects = {}
+end
+
+-- 更新距离显示的函数
+local function updateDistances()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        return
+    end
+    
+    local playerPos = LocalPlayer.Character.HumanoidRootPart.Position
+    
+    for object, espData in pairs(ESPObjects) do
+        if object and object.Parent and espData.DistanceLabel then
+            local distance = (playerPos - object.Position).Magnitude
+            espData.DistanceLabel.Text = string.format("%.1fm", distance)
+            
+            -- 根据距离调整透明度
+            local transparency = math.clamp(distance / 200, 0.1, 0.7)
+            if espData.Billboard and espData.Billboard:FindFirstChild("Background") then
+                espData.Billboard.Background.BackgroundTransparency = transparency + 0.1
+            end
+            if espData.Highlight then
+                espData.Highlight.FillTransparency = transparency + 0.3
+                espData.Highlight.OutlineTransparency = transparency
+            end
+            if espData.Beam then
+                espData.Beam.Transparency = NumberSequence.new(transparency + 0.2)
+            end
+        else
+            removeESP(object)
+        end
+    end
+end
+
+-- 查找并创建所有ESP
+local function findAndCreateESP()
+    -- Dollar物体（红色）
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Dollar" and obj:IsA("BasePart") then
+            createESP(obj, "DOLLAR", Color3.fromRGB(255, 60, 60))
+        end
+    end
+    
+    -- BalloonCrate物体（青色）
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "BalloonCrate" then
+            local cratePart = obj:FindFirstChild("Crate") or obj:FindFirstChildWhichIsA("BasePart")
+            if cratePart then
+                createESP(cratePart, "气球箱", Color3.fromRGB(0, 180, 255))
+            end
+        end
+    end
+    
+    -- Chest物体（金色）
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Chest" and obj:IsA("BasePart") then
+            createESP(obj, "宝藏箱", Color3.fromRGB(255, 200, 50))
+        end
+    end
+end
+
+-- 检测遗漏物体的函数（每0.1秒执行一次）
+local function checkMissedObjects()
+    -- 检查Dollar物体
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Dollar" and obj:IsA("BasePart") and not ESPObjects[obj] then
+            createESP(obj, "DOLLAR", Color3.fromRGB(255, 60, 60))
+        end
+    end
+    
+    -- 检查BalloonCrate物体
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "BalloonCrate" and not ESPObjects[obj] then
+            local cratePart = obj:FindFirstChild("Crate") or obj:FindFirstChildWhichIsA("BasePart")
+            if cratePart and not ESPObjects[cratePart] then
+                createESP(cratePart, "气球箱", Color3.fromRGB(0, 180, 255))
+            end
+        end
+    end
+    
+    -- 检查Chest物体
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "Chest" and obj:IsA("BasePart") and not ESPObjects[obj] then
+            createESP(obj, "宝藏箱", Color3.fromRGB(255, 200, 50))
+        end
+    end
+    
+    -- 清理已销毁的对象
+    for object, _ in pairs(ESPObjects) do
+        if not object or not object.Parent then
+            removeESP(object)
+        end
+    end
+end
+
+-- 主函数：开始透视ESP绘制
+local function startESP()
+    -- 先移除所有现有的ESP和连接
+    removeAllESP()
+    for _, conn in ipairs(connections) do
+        conn:Disconnect()
+    end
+    connections = {}
+    
+    -- 初始查找并创建ESP
+    findAndCreateESP()
+    
+    -- 监听新出现的物体
+    local descendantConnection
+    descendantConnection = workspace.DescendantAdded:Connect(function(obj)
+        if obj.Name == "Dollar" and obj:IsA("BasePart") then
+            createESP(obj, "DOLLAR", Color3.fromRGB(255, 60, 60))
+        elseif obj.Name == "BalloonCrate" then
+            local cratePart = obj:FindFirstChild("Crate") or obj:FindFirstChildWhichIsA("BasePart")
+            if cratePart then
+                createESP(cratePart, "气球箱", Color3.fromRGB(0, 180, 255))
+            end
+        elseif obj.Name == "Chest" and obj:IsA("BasePart") then
+            createESP(obj, "宝藏箱", Color3.fromRGB(255, 200, 50))
+        end
+    end)
+    
+    table.insert(connections, descendantConnection)
+    
+    -- 每帧更新距离
+    local renderConnection
+    renderConnection = RunService.RenderStepped:Connect(updateDistances)
+    table.insert(connections, renderConnection)
+    
+    -- 每0.1秒检测遗漏物体（更频繁的检测）
+    local lastCheckTime = 0
+    local checkConnection
+    checkConnection = RunService.Heartbeat:Connect(function()
+        local currentTime = os.clock()
+        if currentTime - lastCheckTime >= 0.1 then -- 每0.1秒检测一次
+            checkMissedObjects()
+            lastCheckTime = currentTime
+        end
+    end)
+    
+    table.insert(connections, checkConnection)
+    
+    -- 监听角色变化
+    local characterConnection
+    characterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+        character:WaitForChild("HumanoidRootPart")
+        -- 重新连接所有光束到新角色
+        for object, espData in pairs(ESPObjects) do
+            if espData.Attachment0 then
+                espData.Attachment0.Parent = character.HumanoidRootPart
+                espData.Attachment0.Position = Vector3.new(0, -1.8, 0)
+            end
+        end
+    end)
+    
+    table.insert(connections, characterConnection)
+    
+    -- 返回停止函数
+    return function()
+        for _, conn in ipairs(connections) do
+            conn:Disconnect()
+        end
+        removeAllESP()
+    end
+end
+
+-- 使用示例：
+local stopESP = startESP() -- 开始透视绘制
+
+-- 如果想要停止绘制，调用：
+-- stopESP()

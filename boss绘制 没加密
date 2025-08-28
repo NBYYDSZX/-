@@ -1,0 +1,332 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+-- 存储所有BOSS UI的表格
+local bossUIs = {}
+
+-- 颜色配置
+local COLORS = {
+    TEXT_GLOW = Color3.fromRGB(255, 215, 0),
+    HEALTH_HIGH = Color3.fromRGB(46, 204, 113),
+    HEALTH_MEDIUM = Color3.fromRGB(241, 196, 15),
+    HEALTH_LOW = Color3.fromRGB(231, 76, 60),
+    BACKGROUND = Color3.fromRGB(25, 25, 35),
+    BORDER = Color3.fromRGB(86, 101, 115)
+}
+
+-- 彩虹色生成函数
+local function getRainbowColor()
+    local time = tick()
+    local r = math.sin(time * 2) * 0.5 + 0.5
+    local g = math.sin(time * 2 + 2) * 0.5 + 0.5
+    local b = math.sin(time * 2 + 4) * 0.5 + 0.5
+    return Color3.new(r, g, b)
+end
+
+-- 创建精美BOSS UI的函数
+local function createBossUI(bossModel, bossRootPart)
+    if bossUIs[bossModel] then return bossUIs[bossModel] end
+    
+    -- 创建BillboardGui（始终面向相机）
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Name = "BossTrackerUI"
+    billboardGui.Size = UDim2.new(0, 150, 0, 80) -- 更小的尺寸
+    billboardGui.StudsOffset = Vector3.new(0, 4, 0) -- 在BOSS头上方更高位置
+    billboardGui.AlwaysOnTop = true
+    billboardGui.MaxDistance = 0 -- 无限距离显示
+    billboardGui.Adornee = bossRootPart
+    billboardGui.Enabled = true
+    billboardGui.Parent = bossRootPart
+    
+    -- 创建主容器
+    local container = Instance.new("Frame")
+    container.Name = "Container"
+    container.Size = UDim2.new(1, 0, 1, 0)
+    container.BackgroundTransparency = 1
+    container.Parent = billboardGui
+    
+    -- 创建背景框（带渐变效果）
+    local bgFrame = Instance.new("Frame")
+    bgFrame.Name = "Background"
+    bgFrame.Size = UDim2.new(1, 0, 0, 65)
+    bgFrame.Position = UDim2.new(0, 0, 0, 0)
+    bgFrame.BackgroundColor3 = COLORS.BACKGROUND
+    bgFrame.BackgroundTransparency = 0.15
+    bgFrame.BorderSizePixel = 0
+    bgFrame.Parent = container
+    
+    -- 添加精美圆角
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = bgFrame
+    
+    -- 添加发光边框
+    local border = Instance.new("UIStroke")
+    border.Color = COLORS.BORDER
+    border.Thickness = 2
+    border.Transparency = 0.1
+    border.Parent = bgFrame
+    
+    -- 创建BOSS名称标签（彩色渐变文字）
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "BossName"
+    nameLabel.Size = UDim2.new(1, -20, 0, 20)
+    nameLabel.Position = UDim2.new(0, 10, 0, 5)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = getRainbowColor() -- 彩虹色
+    nameLabel.TextSize = 14
+    nameLabel.Font = Enum.Font.GothamBlack
+    nameLabel.Text = bossModel.Name
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+    nameLabel.ZIndex = 3
+    nameLabel.Parent = bgFrame
+    
+    -- 添加文字发光效果
+    local textGlow = Instance.new("UIStroke")
+    textGlow.Color = COLORS.TEXT_GLOW
+    textGlow.Thickness = 1.5
+    textGlow.Transparency = 0.7
+    textGlow.Parent = nameLabel
+    
+    -- 创建距离标签
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Name = "Distance"
+    distanceLabel.Size = UDim2.new(1, -20, 0, 16)
+    distanceLabel.Position = UDim2.new(0, 10, 0, 25)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+    distanceLabel.TextSize = 12
+    distanceLabel.Font = Enum.Font.GothamMedium
+    distanceLabel.Text = "计算中..."
+    distanceLabel.TextXAlignment = Enum.TextXAlignment.Center
+    distanceLabel.Parent = bgFrame
+    
+    -- 创建血条背景
+    local healthBarBg = Instance.new("Frame")
+    healthBarBg.Name = "HealthBarBackground"
+    healthBarBg.Size = UDim2.new(0.85, 0, 0, 10)
+    healthBarBg.Position = UDim2.new(0.075, 0, 0, 45)
+    healthBarBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    healthBarBg.BorderSizePixel = 0
+    healthBarBg.ZIndex = 2
+    healthBarBg.Parent = container
+    
+    local healthBarBgCorner = Instance.new("UICorner")
+    healthBarBgCorner.CornerRadius = UDim.new(0, 5)
+    healthBarBgCorner.Parent = healthBarBg
+    
+    -- 创建血条
+    local healthBar = Instance.new("Frame")
+    healthBar.Name = "HealthBar"
+    healthBar.Size = UDim2.new(1, 0, 1, 0)
+    healthBar.BackgroundColor3 = COLORS.HEALTH_HIGH
+    healthBar.BorderSizePixel = 0
+    healthBar.ZIndex = 3
+    healthBar.Parent = healthBarBg
+    
+    local healthBarCorner = Instance.new("UICorner")
+    healthBarCorner.CornerRadius = UDim.new(0, 5)
+    healthBarCorner.Parent = healthBar
+    
+    -- 创建血条渐变效果
+    local healthGradient = Instance.new("UIGradient")
+    healthGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 255))
+    })
+    healthGradient.Transparency = NumberSequence.new(0.5)
+    healthGradient.Parent = healthBar
+    
+    -- 创建血量百分比文本
+    local healthText = Instance.new("TextLabel")
+    healthText.Name = "HealthText"
+    healthText.Size = UDim2.new(1, 0, 0, 12)
+    healthText.Position = UDim2.new(0, 0, 0, 55)
+    healthText.BackgroundTransparency = 1
+    healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    healthText.TextSize = 10
+    healthText.Font = Enum.Font.Gotham
+    healthText.Text = "100%"
+    healthText.TextXAlignment = Enum.TextXAlignment.Center
+    healthText.ZIndex = 3
+    healthText.Parent = container
+    
+    -- 添加血量文字发光
+    local healthTextGlow = Instance.new("UIStroke")
+    healthTextGlow.Color = Color3.fromRGB(0, 0, 0)
+    healthTextGlow.Thickness = 1
+    healthTextGlow.Transparency = 0.3
+    healthTextGlow.Parent = healthText
+    
+    -- 存储UI引用
+    bossUIs[bossModel] = {
+        billboardGui = billboardGui,
+        distanceLabel = distanceLabel,
+        healthBar = healthBar,
+        healthText = healthText,
+        nameLabel = nameLabel,
+        humanoid = bossModel:FindFirstChildOfClass("Humanoid"),
+        lastUpdate = 0
+    }
+    
+    return bossUIs[bossModel]
+end
+
+-- 寻找BOSS函数（更智能的检测）
+local function findBosses()
+    local bosses = {}
+    
+    -- 检测所有可能的BOSS类型
+    local bossKeywords = {"Boss", "BOSS", "boss", "Guardian", "Titan", "Dragon", "Giant", "Monster"}
+    
+    for _, object in ipairs(workspace:GetDescendants()) do
+        if object:IsA("Model") then
+            local isBoss = false
+            for _, keyword in ipairs(bossKeywords) do
+                if object.Name:find(keyword) then
+                    isBoss = true
+                    break
+                end
+            end
+            
+            if isBoss then
+                local humanoid = object:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    local rootPart = object:FindFirstChild("HumanoidRootPart") or 
+                                   object:FindFirstChild("Torso") or 
+                                   object:FindFirstChild("Head")
+                    if rootPart then
+                        table.insert(bosses, {
+                            Model = object, 
+                            RootPart = rootPart, 
+                            Humanoid = humanoid
+                        })
+                    end
+                end
+            end
+        end
+    end
+    return bosses
+end
+
+-- 清理不再存在的BOSS UI
+local function cleanupBossUIs()
+    for bossModel, uiData in pairs(bossUIs) do
+        if not bossModel:IsDescendantOf(workspace) or 
+           (uiData.humanoid and (uiData.humanoid.Health <= 0 or not uiData.humanoid:IsDescendantOf(workspace))) then
+            if uiData.billboardGui then
+                -- 添加消失动画
+                local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                local tween = TweenService:Create(uiData.billboardGui, tweenInfo, {
+                    Size = UDim2.new(0, 0, 0, 0),
+                    StudsOffset = Vector3.new(0, 10, 0)
+                })
+                tween:Play()
+                tween.Completed:Connect(function()
+                    uiData.billboardGui:Destroy()
+                end)
+            end
+            bossUIs[bossModel] = nil
+        end
+    end
+end
+
+-- 更新UI动画效果
+local function updateUIWithAnimation(uiData, healthPercent, distance)
+    local currentTime = tick()
+    
+    -- 限制更新频率（每0.1秒更新一次）
+    if currentTime - uiData.lastUpdate < 0.1 then
+        return
+    end
+    uiData.lastUpdate = currentTime
+    
+    -- 更新距离文本
+    uiData.distanceLabel.Text = string.format("%d米", math.floor(distance))
+    
+    -- 更新血量百分比文本
+    uiData.healthText.Text = string.format("%d%%", math.floor(healthPercent * 100))
+    
+    -- 根据血量改变血条颜色
+    local healthColor
+    if healthPercent > 0.7 then
+        healthColor = COLORS.HEALTH_HIGH
+    elseif healthPercent > 0.3 then
+        healthColor = COLORS.HEALTH_MEDIUM
+    else
+        healthColor = COLORS.HEALTH_LOW
+    end
+    
+    -- 平滑过渡血条颜色和大小
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    local sizeTween = TweenService:Create(uiData.healthBar, tweenInfo, {
+        Size = UDim2.new(healthPercent, 0, 1, 0)
+    })
+    
+    local colorTween = TweenService:Create(uiData.healthBar, tweenInfo, {
+        BackgroundColor3 = healthColor
+    })
+    
+    sizeTween:Play()
+    colorTween:Play()
+    
+    -- 更新名字颜色（彩虹效果）
+    uiData.nameLabel.TextColor3 = getRainbowColor()
+end
+
+-- 主更新循环
+local connection
+connection = RunService.RenderStepped:Connect(function()
+    cleanupBossUIs()
+    
+    local bosses = findBosses()
+    
+    for _, boss in ipairs(bosses) do
+        local uiData = createBossUI(boss.Model, boss.RootPart)
+        
+        if uiData and humanoidRootPart then
+            -- 计算距离
+            local distance = (boss.RootPart.Position - humanoidRootPart.Position).Magnitude
+            
+            -- 更新血量百分比
+            local healthPercent = 0
+            if uiData.humanoid and uiData.humanoid.MaxHealth > 0 then
+                healthPercent = uiData.humanoid.Health / uiData.humanoid.MaxHealth
+                healthPercent = math.clamp(healthPercent, 0, 1)
+            end
+            
+            -- 带动画效果更新UI
+            updateUIWithAnimation(uiData, healthPercent, distance)
+        end
+    end
+end)
+
+-- 角色重新生成时重新获取引用
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart")
+end)
+
+-- 清理函数
+local function cleanup()
+    if connection then
+        connection:Disconnect()
+    end
+    for _, uiData in pairs(bossUIs) do
+        if uiData.billboardGui then
+            uiData.billboardGui:Destroy()
+        end
+    end
+    bossUIs = {}
+end
+
+player.CharacterRemoving:Connect(cleanup)
+
+-- 返回清理函数以便外部调用
+return cleanup
